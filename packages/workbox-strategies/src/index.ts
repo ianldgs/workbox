@@ -6,15 +6,15 @@
   https://opensource.org/licenses/MIT.
 */
 
-import {CacheFirst} from './CacheFirst.js';
-import {CacheOnly} from './CacheOnly.js';
-import {NetworkFirst} from './NetworkFirst.js';
-import {NetworkOnly} from './NetworkOnly.js';
-import {StaleWhileRevalidate} from './StaleWhileRevalidate.js';
-import {Strategy} from './Strategy.js';
-import {StrategyHandler} from './StrategyHandler.js';
-import './_version.js';
-
+import { CacheFirst } from "./CacheFirst.js";
+import { CacheOnly } from "./CacheOnly.js";
+import { DedupRequests } from "./DedupRequests.js";
+import { NetworkFirst } from "./NetworkFirst.js";
+import { NetworkOnly } from "./NetworkOnly.js";
+import { StaleWhileRevalidate } from "./StaleWhileRevalidate.js";
+import { Strategy } from "./Strategy.js";
+import { StrategyHandler } from "./StrategyHandler.js";
+import "./_version.js";
 
 /**
  * There are common caching strategies that most service workers will need
@@ -26,10 +26,10 @@ import './_version.js';
 export {
   CacheFirst,
   CacheOnly,
+  DedupRequests,
   NetworkFirst,
   NetworkOnly,
   StaleWhileRevalidate,
   Strategy,
   StrategyHandler,
 };
-

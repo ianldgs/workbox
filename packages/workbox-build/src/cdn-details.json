@@ -1,6 +1,6 @@
 {
-  "origin": "https://storage.googleapis.com",
+  "origin": "http://localhost:9080",
   "bucketName": "workbox-cdn",
   "releasesDir": "releases",
-  "latestVersion": "6.0.0-alpha.0"
+  "latestVersion": "6.0.0-alpha.1"
 }
