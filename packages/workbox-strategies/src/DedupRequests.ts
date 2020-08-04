@@ -10,42 +10,131 @@ import { assert } from "workbox-core/_private/assert.js";
 import { logger } from "workbox-core/_private/logger.js";
 import { WorkboxError } from "workbox-core/_private/WorkboxError.js";
 
-import { Strategy } from "./Strategy.js";
+import { Strategy, StrategyOptions } from "./Strategy.js";
 import { StrategyHandler } from "./StrategyHandler.js";
 import { messages } from "./utils/messages.js";
 import "./_version.js";
 
 // window.scopus.platform.serviceWorker.strategies.DedupRequests
 
+interface DedupRequestsOptions extends StrategyOptions {
+  networkTimeoutSeconds?: number;
+  offlineSupport?: boolean;
+}
+
 /**
- * An implementation of a [cache-first]{@link https://developers.google.com/web/fundamentals/instant-and-offline/offline-cookbook/#cache-falling-back-to-network}
- * request strategy.
+ * Deduplicates two or more API requests being done at the same time.
  *
- * A cache first strategy is useful for assets that have been revisioned,
- * such as URLs like `/styles/example.a8f5f1.css`, since they
- * can be cached for long periods of time.
- *
- * If the network request fails, and there is no cache match, this will throw
+ * If the request fails, and there is no cache match, this will throw
  * a `WorkboxError` exception.
  *
  * @extends module:workbox-core.Strategy
  * @memberof module:workbox-strategies
  */
 export class DedupRequests extends Strategy {
-  cacheName = "memory";
-
   /**
    * Temporary cache for requests being done at the same time.
    */
-  private memoryCache = new Map<string, Promise<Response>>();
+  private _memoryCache = new Map<string, Promise<Response | undefined>>();
 
-  /**
-   * @private
-   * @param {Request|string} request A request to run this strategy for.
-   * @param {module:workbox-strategies.StrategyHandler} handler The event that
-   *     triggered the request.
-   * @return {Promise<Response>}
-   */
+  private _offlineSupport: boolean;
+  private _networkTimeoutSeconds: number;
+
+  constructor(options: DedupRequestsOptions = {}) {
+    super(options);
+    this._offlineSupport = options.offlineSupport || false;
+    this._networkTimeoutSeconds = options.networkTimeoutSeconds || 0;
+  }
+
+  private _getRequestKey(request: Request) {
+    return `${request.method} ${request.url}`;
+  }
+
+  private _wait(seconds: number) {
+    return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+  }
+
+  private _fetchAndCachesPutWithTimeout({
+    logs,
+    request,
+    handler,
+  }: {
+    logs: any[];
+    request: Request;
+    handler: StrategyHandler;
+  }) {
+    let done = false;
+
+    const fallbackToCache = () => {
+      return handler.cacheMatch(request).then((response) => {
+        if (done || !this._offlineSupport) return;
+
+        if (process.env.NODE_ENV !== "production") {
+          if (response) {
+            logs.push(`Got response from '${this.cacheName}' cache`);
+          } else {
+            logs.push(`No response from '${this.cacheName}' cache`);
+          }
+        }
+
+        return response;
+      });
+    };
+
+    const promises = [
+      handler
+        .fetchAndCachePut(request)
+        .then((response) => {
+          if (done) return;
+
+          if (process.env.NODE_ENV !== "production") {
+            logs.push(`Got response from network.`);
+          }
+
+          return response;
+        })
+        .catch(() => {
+          if (done) return;
+
+          if (process.env.NODE_ENV !== "production") {
+            logs.push(`Network request failed.`);
+          }
+
+          return fallbackToCache();
+        }),
+    ];
+
+    if (this._networkTimeoutSeconds) {
+      promises.push(
+        this._wait(this._networkTimeoutSeconds).then(() => {
+          if (done) return;
+
+          if (process.env.NODE_ENV !== "production") {
+            logs.push(
+              `Timing out the network response at ${this._networkTimeoutSeconds} seconds.`
+            );
+          }
+
+          return fallbackToCache();
+        })
+      );
+    }
+
+    const responsePromise = Promise.race(promises);
+
+    responsePromise.finally(() => (done = true));
+
+    this._memoryCache.set(
+      this._getRequestKey(request),
+      responsePromise.then(
+        (response) => response?.clone(),
+        () => undefined
+      )
+    );
+
+    return responsePromise;
+  }
+
   async _handle(request: Request, handler: StrategyHandler): Promise<Response> {
     const logs = [];
 
@@ -58,39 +147,38 @@ export class DedupRequests extends Strategy {
       });
     }
 
-    const requestKey = `${request.method} ${request.url}`;
-
-    let response = await this.memoryCache.get(requestKey);
+    let response = await this._memoryCache
+      .get(this._getRequestKey(request))
+      ?.catch(() => undefined);
 
     let error;
     if (!response) {
       if (process.env.NODE_ENV !== "production") {
         logs.push(
-          `No response found in the '${this.cacheName}' cache. ` +
-            `Will respond with a network request.`
+          `No response found in the memory cache. Will respond with a network request or '${this.cacheName}' cache.`
         );
       }
+
       try {
-        const responsePromise = handler.fetch(request);
-        this.memoryCache.set(
-          requestKey,
-          responsePromise.then((r) => r.clone())
-        );
-        response = await responsePromise.then((r) => r.clone());
+        response = await this._fetchAndCachesPutWithTimeout({
+          logs,
+          request,
+          handler,
+        });
       } catch (err) {
         error = err;
       }
 
       if (process.env.NODE_ENV !== "production") {
-        if (response) {
-          logs.push(`Got response from network.`);
-        } else {
-          logs.push(`Unable to get a response from the network.`);
+        if (!response) {
+          logs.push(
+            `Unable to get a response from the network, memory cache or '${this.cacheName}' cache.`
+          );
         }
       }
     } else {
       if (process.env.NODE_ENV !== "production") {
-        logs.push(`Found a cached response in the '${this.cacheName}' cache.`);
+        logs.push(`Found a cached response in the memory cache.`);
       }
     }
 
@@ -107,7 +195,7 @@ export class DedupRequests extends Strategy {
       throw new WorkboxError("no-response", { url: request.url, error });
     }
 
-    this.memoryCache.delete(requestKey);
+    this._memoryCache.delete(this._getRequestKey(request));
 
     return response;
   }
