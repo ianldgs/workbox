@@ -152,6 +152,12 @@ export interface CacheWillUpdateCallback {
   (param: CacheWillUpdateCallbackParam): Promise<Response | void | null | undefined>;
 }
 
+export type FetchCallbackParam = Request;
+
+export interface FetchCallback {
+  (param1: FetchCallbackParam, param2?: RequestInit): Promise<Response>
+}
+
 export interface CachedResponseWillBeUsedCallbackParam {
   cacheName: string;
   request: Request;
@@ -252,6 +258,7 @@ export interface WorkboxPlugin {
   cachedResponseWillBeUsed?: CachedResponseWillBeUsedCallback;
   cacheKeyWillBeUsed?: CacheKeyWillBeUsedCallback;
   cacheWillUpdate?: CacheWillUpdateCallback;
+  fetch?: FetchCallback;
   fetchDidFail?: FetchDidFailCallback;
   fetchDidSucceed?: FetchDidSucceedCallback;
   handlerDidComplete?: HandlerDidCompleteCallback;
@@ -267,6 +274,7 @@ export interface WorkboxPluginCallbackParam {
   cachedResponseWillBeUsed: CachedResponseWillBeUsedCallbackParam;
   cacheKeyWillBeUsed: CacheKeyWillBeUsedCallbackParam;
   cacheWillUpdate: CacheWillUpdateCallbackParam;
+  fetch: FetchCallbackParam;
   fetchDidFail: FetchDidFailCallbackParam;
   fetchDidSucceed: FetchDidSucceedCallbackParam;
   handlerDidComplete: HandlerDidCompleteCallbackParam;

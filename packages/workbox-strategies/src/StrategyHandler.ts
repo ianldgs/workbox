@@ -296,7 +296,7 @@ class StrategyHandler {
    *     when executing each callback. This object will be merged with the
    *     current plugin state prior to callback execution.
    */
-  async runCallbacks<C extends keyof NonNullable<WorkboxPlugin>>(
+  async runCallbacks<C extends keyof NonNullable<Omit<WorkboxPlugin, 'fetch'>>>(
     name: C,
     param: Omit<WorkboxPluginCallbackParam[C], 'state'>,
   ): Promise<void> {
@@ -316,7 +316,7 @@ class StrategyHandler {
    * @param {string} name The name fo the callback to run
    * @return {Array<Function>}
    */
-  *iterateCallbacks<C extends keyof WorkboxPlugin>(
+  *iterateCallbacks<C extends keyof Omit<WorkboxPlugin, 'fetch'>>(
     name: C,
   ): Generator<NonNullable<WorkboxPlugin[C]>> {
     for (const plugin of this._strategy.plugins) {
@@ -374,11 +374,20 @@ class StrategyHandler {
     // from the Request we make. Pass both to `fetchDidFail` to aid debugging.
     const pluginFilteredRequest: Request = request.clone();
 
+    if (process.env.NODE_ENV !== 'production') {
+      const fetchPlugins = this._strategy.plugins.filter(p => typeof p.fetch === 'function');
+      if (fetchPlugins.length > 1) {
+        logger.warn(`Multiple plugins have the fetch callback. Using definition from the first registered plugin.`);
+      }
+    }
+
+    const fetchFunction = this._strategy.plugins.find(p => typeof p.fetch === 'function')?.fetch || fetch;
+
     try {
       let fetchResponse: Response;
 
       // See https://github.com/GoogleChrome/workbox/issues/1796
-      fetchResponse = await fetch(request, request.mode === 'navigate' ?
+      fetchResponse = await fetchFunction(request, request.mode === 'navigate' ?
           undefined : this._strategy.fetchOptions);
 
       if (process.env.NODE_ENV !== 'production') {
